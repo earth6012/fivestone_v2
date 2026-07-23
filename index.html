@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>웹 오목 게임 (VS Computer)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #333;
+            padding: 20px 0;
+        }
+        h1 {
+            margin-bottom: 12px;
+            font-size: 1.8rem;
+            color: #2c3e50;
+        }
+        
+        /* 설정 패널 */
+        .config-box {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+            background: #ffffff;
+            padding: 10px 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+        .config-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        select {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.9rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* 상태 및 타이머 박스 */
+        .status-box {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 16px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            background: #ffffff;
+            padding: 10px 24px;
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        #status {
+            color: #2563eb;
+        }
+        .timer-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: #f8fafc;
+            padding: 4px 12px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        #timer {
+            color: #2563eb;
+            font-size: 1.2rem;
+            font-weight: 700;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        canvas {
+            background-color: #e4a853; /* 바둑판 나무 색상 */
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+            cursor: pointer;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+            transform: translateY(-2px);
+        }
+        button.btn-secondary {
+            background-color: #64748b;
+        }
+        button.btn-secondary:hover {
+            background-color: #475569;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>웹 오목 게임</h1>
+
+    <!-- 옵션 설정 영역 -->
+    <div class="config-box">
+        <div class="config-group">
+            <label for="color-select">돌 선택:</label>
+            <select id="color-select">
+                <option value="1">흑돌 (선공)</option>
+                <option value="2">백돌 (후공)</option>
+            </select>
+        </div>
+        <div class="config-group">
+            <label for="difficulty-select">AI 난이도:</label>
+            <select id="difficulty-select">
+                <option value="easy">쉬움</option>
+                <option value="medium" selected>보통</option>
+                <option value="hard">어려움</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 상태 및 타이머 영역 -->
+    <div class="status-box">
+        <div>상태: <span id="status">당신의 차례입니다</span></div>
+        <div class="timer-badge">⏱️ <span id="timer">20</span>초</div>
+    </div>
+
+    <!-- 15x15 오목판 Canvas -->
+    <canvas id="board" width="540" height="540"></canvas>
+
+    <!-- 조작 버튼 -->
+    <div class="controls">
+        <button id="reset-btn">게임 다시 시작</button>
+        <button id="undo-btn" class="btn-secondary">무르기</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const timerEl = document.getElementById('timer');
+        const resetBtn = document.getElementById('reset-btn');
+        const undoBtn = document.getElementById('undo-btn');
+        const colorSelect = document.getElementById('color-select');
+        const difficultySelect = document.getElementById('difficulty-select');
+
+        const SIZE = 15;        // 15x15 줄
+        const CELL_SIZE = 34;   // 격자 간격 (px)
+        const PADDING = 32;     // 여백 (px)
+        
+        let board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(0));
+        let history = [];       // 착수 기록 [{r, c, color}]
+        let gameOver = false;
+        let currentTurn = 1;    // 1: 흑돌(선공), 2: 백돌(후공)
+        
+        let playerColor = 1;    // 플레이어 색상 (1: 흑, 2: 백)
+        let aiColor = 2;        // AI 색상
+        let timerId = null;
+        let timeLeft = 20;
+
+        // --- 1. 초기화 및 게임 시작 ---
+        function initGame() {
+            stopTimer();
+            board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(0));
+            history = [];
+            gameOver = false;
+            currentTurn = 1; // 흑돌 선공
+
+            playerColor = parseInt(colorSelect.value);
+            aiColor = playerColor === 1 ? 2 : 1;
+
+            drawBoard();
+            updateStatus();
+
+            // 백돌 선택 시 AI(흑돌)가 먼저 착수
+            if (currentTurn === aiColor) {
+                setTimeout(aiMove, 400);
+            } else {
+                startTimer();
+            }
+        }
+
+        // --- 2. 바둑판 및 돌 그리기 ---
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#4a2e13';
+            ctx.lineWidth = 1;
+
+            // 격자선
+            for (let i = 0; i < SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(PADDING + i * CELL_SIZE, PADDING);
+                ctx.lineTo(PADDING + i * CELL_SIZE, PADDING + (SIZE - 1) * CELL_SIZE);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(PADDING, PADDING + i * CELL_SIZE);
+                ctx.lineTo(PADDING + (SIZE - 1) * CELL_SIZE, PADDING + i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // 화점(Star points)
+            const starPoints = [3, 7, 11];
+            starPoints.forEach(r => {
+                starPoints.forEach(c => {
+                    ctx.beginPath();
+                    ctx.arc(PADDING + c * CELL_SIZE, PADDING + r * CELL_SIZE, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = '#4a2e13';
+                    ctx.fill();
+                });
+            });
+
+            // 돌 그리기
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] !== 0) {
+                        drawStone(r, c, board[r][c]);
+                    }
+                }
+            }
+
+            // [기능 추가 1] 마지막 착수 위치 표시 (빨간 점)
+            if (history.length > 0) {
+                const last = history[history.length - 1];
+                const x = PADDING + last.c * CELL_SIZE;
+                const y = PADDING + last.r * CELL_SIZE;
+
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#ef4444';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        }
+
+        function drawStone(r, c, color) {
+            const x = PADDING + c * CELL_SIZE;
+            const y = PADDING + r * CELL_SIZE;
+
+            ctx.beginPath();
+            ctx.arc(x, y, CELL_SIZE / 2 - 2, 0, Math.PI * 2);
+
+            const grad = ctx.createRadialGradient(
+                x - 3, y - 3, 2,
+                x, y, CELL_SIZE / 2
+            );
+
+            if (color === 1) { // 흑돌
+                grad.addColorStop(0, '#666');
+                grad.addColorStop(1, '#111');
+            } else { // 백돌
+                grad.addColorStop(0, '#ffffff');
+                grad.addColorStop(1, '#d1d5db');
+            }
+
+            ctx.fillStyle = grad;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+        }
+
+        // --- 3. 타이머 제어 [기능 추가 4] ---
+        function startTimer() {
+            stopTimer();
+            timeLeft = 20;
+            timerEl.textContent = timeLeft;
+            timerEl.style.color = '#2563eb';
+
+            if (gameOver) return;
+
+            timerId = setInterval(() => {
+                timeLeft--;
+                timerEl.textContent = timeLeft;
+
+                if (timeLeft <= 5) {
+                    timerEl.style.color = '#ef4444'; // 5초 이하 시 경고색상
+                }
+
+                if (timeLeft <= 0) {
+                    stopTimer();
+                    gameOver = true;
+                    if (currentTurn === playerColor) {
+                        statusEl.textContent = '⏰ 시간 초과! 컴퓨터의 승리입니다.';
+                    } else {
+                        statusEl.textContent = '⏰ 컴퓨터 시간 초과! 당신의 승리입니다.';
+                    }
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+            }
+        }
+
+        // --- 4. 상태 텍스트 업데이트 ---
+        function updateStatus() {
+            if (gameOver) return;
+
+            if (currentTurn === playerColor) {
+                const colorText = playerColor === 1 ? '흑돌' : '백돌';
+                statusEl.textContent = `당신의 차례입니다 (${colorText})`;
+            } else {
+                statusEl.textContent = '컴퓨터가 생각 중입니다...';
+            }
+        }
+
+        // --- 5. 착수 처리 ---
+        function makeMove(r, c, color) {
+            board[r][c] = color;
+            history.push({r, c, color});
+            drawBoard();
+
+            if (checkWin(r, c, color)) {
+                gameOver = true;
+                stopTimer();
+                statusEl.textContent = color === playerColor ? '🎉 축하합니다! 당신이 승리했습니다!' : '🤖 컴퓨터가 승리했습니다!';
+                return;
+            }
+
+            if (history.length === SIZE * SIZE) {
+                gameOver = true;
+                stopTimer();
+                statusEl.textContent = '🤝 무승부입니다!';
+                return;
+            }
+
+            currentTurn = currentTurn === 1 ? 2 : 1;
+            updateStatus();
+
+            if (currentTurn === aiColor && !gameOver) {
+                stopTimer();
+                setTimeout(aiMove, 400);
+            } else {
+                startTimer();
+            }
+        }
+
+        // 클릭 이벤트 (플레이어 턴)
+        canvas.addEventListener('click', (e) => {
+            if (gameOver || currentTurn !== playerColor) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const c = Math.round((x - PADDING) / CELL_SIZE);
+            const r = Math.round((y - PADDING) / CELL_SIZE);
+
+            if (r >= 0 && r < SIZE && c >= 0 && c < SIZE && board[r][c] === 0) {
+                makeMove(r, c, playerColor);
+            }
+        });
+
+        // --- 6. 무르기 기능 [기능 추가 2] ---
+        undoBtn.addEventListener('click', () => {
+            if (history.length === 0) return;
+            if (!gameOver && currentTurn === aiColor) return; // AI 생각 중 무르기 금지
+
+            stopTimer();
+            gameOver = false;
+
+            // 플레이어 차례로 되돌리기 위해 (컴퓨터 수 + 플레이어 수) 2수 되돌림
+            let popCount = (currentTurn === playerColor) ? 2 : 1;
+            if (history.length < popCount) {
+                popCount = history.length;
+            }
+
+            for (let i = 0; i < popCount; i++) {
+                let last = history.pop();
+                if (last) board[last.r][last.c] = 0;
+            }
+
+            currentTurn = playerColor;
+            drawBoard();
+            updateStatus();
+
+            // 판이 비어있고 플레이어가 백돌인 경우 다시 AI 착수 유도
+            if (history.length === 0 && playerColor === 2) {
+                currentTurn = 1; // AI 차례
+                updateStatus();
+                setTimeout(aiMove, 400);
+            } else {
+                startTimer();
+            }
+        });
+
+        // --- 7. 컴퓨터 AI 알고리즘 [기능 추가 3: 난이도 조절] ---
+        function aiMove() {
+            if (gameOver) return;
+
+            const difficulty = difficultySelect.value;
+            let bestScore = -Infinity;
+            let bestMoves = [];
+
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] === 0) {
+                        let aiScore = evaluateCell(r, c, aiColor);
+                        let playerScore = evaluateCell(r, c, playerColor);
+                        let totalScore = 0;
+
+                        // 난이도별 가중치 조절
+                        if (difficulty === 'easy') {
+                            // 쉬움: 수비 가중치가 낮고 실수가 잦음
+                            totalScore = aiScore + playerScore * 0.5 + (Math.random() * 400);
+                        } else if (difficulty === 'medium') {
+                            // 보통: 균형 잡힌 공수
+                            totalScore = aiScore + playerScore * 1.15;
+                        } else if (difficulty === 'hard') {
+                            // 어려움: 철저한 방어 및 위기 상황 최우선 대처
+                            totalScore = aiScore + playerScore * 1.45;
+                            if (playerScore >= 10000) totalScore += 30000; // 상대 승리 패턴 차단
+                        }
+
+                        // 중앙 가산점
+                        const centerDist = Math.abs(7 - r) + Math.abs(7 - c);
+                        totalScore += (14 - centerDist);
+
+                        if (totalScore > bestScore) {
+                            bestScore = totalScore;
+                            bestMoves = [{r, c}];
+                        } else if (totalScore === bestScore) {
+                            bestMoves.push({r, c});
+                        }
+                    }
+                }
+            }
+
+            if (bestMoves.length > 0) {
+                const move = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+                makeMove(move.r, move.c, aiColor);
+            }
+        }
+
+        // 패턴 점수 계산
+        function evaluateCell(r, c, color) {
+            const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+            let totalVal = 0;
+
+            for (let [dr, dc] of dirs) {
+                let count = 1;
+                let openEnds = 0;
+
+                // 정방향
+                let nr = r + dr, nc = c + dc;
+                while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === color) {
+                    count++;
+                    nr += dr;
+                    nc += dc;
+                }
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === 0) openEnds++;
+
+                // 역방향
+                nr = r - dr;
+                nc = c - dc;
+                while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === color) {
+                    count++;
+                    nr -= dr;
+                    nc -= dc;
+                }
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === 0) openEnds++;
+
+                // 패턴 점수 부여
+                if (count >= 5) totalVal += 100000;
+                else if (count === 4 && openEnds === 2) totalVal += 10000;
+                else if (count === 4 && openEnds === 1) totalVal += 2500;
+                else if (count === 3 && openEnds === 2) totalVal += 1200;
+                else if (count === 3 && openEnds === 1) totalVal += 200;
+                else if (count === 2 && openEnds === 2) totalVal += 100;
+                else if (count === 2 && openEnds === 1) totalVal += 10;
+            }
+
+            return totalVal;
+        }
+
+        // 승리 조건 체크
+        function checkWin(r, c, color) {
+            const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+            for (let [dr, dc] of dirs) {
+                let count = 1;
+                let nr = r + dr, nc = c + dc;
+                while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === color) {
+                    count++;
+                    nr += dr;
+                    nc += dc;
+                }
+                nr = r - dr;
+                nc = c - dc;
+                while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === color) {
+                    count++;
+                    nr -= dr;
+                    nc -= dc;
+                }
+                if (count >= 5) return true;
+            }
+            return false;
+        }
+
+        // --- 8. 이벤트 리스너 ---
+        resetBtn.addEventListener('click', initGame);
+        colorSelect.addEventListener('change', initGame);
+
+        // 최초 게임 시작
+        initGame();
+    </script>
+</body>
+</html>
