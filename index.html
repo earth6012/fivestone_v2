@@ -137,9 +137,9 @@
         <div class="config-group">
             <label for="difficulty-select">AI 난이도:</label>
             <select id="difficulty-select">
-                <option value="easy">쉬움</option>
-                <option value="medium" selected>보통</option>
-                <option value="hard">어려움</option>
+                <option value="easy">윤병일</option>
+                <option value="medium" selected>심일수</option>
+                <option value="hard">이은희</option>
             </select>
         </div>
     </div>
@@ -434,13 +434,13 @@
 
                         // 난이도별 가중치 조절
                         if (difficulty === 'easy') {
-                            // 쉬움: 수비 가중치가 낮고 실수가 잦음
+                            // 윤병일: 수비 가중치가 낮고 실수가 잦음
                             totalScore = aiScore + playerScore * 0.5 + (Math.random() * 400);
                         } else if (difficulty === 'medium') {
-                            // 보통: 균형 잡힌 공수
+                            // 심일수: 균형 잡힌 공수
                             totalScore = aiScore + playerScore * 1.15;
                         } else if (difficulty === 'hard') {
-                            // 어려움: 철저한 방어 및 위기 상황 최우선 대처
+                            // 이은희: 철저한 방어 및 위기 상황 최우선 대처
                             totalScore = aiScore + playerScore * 1.45;
                             if (playerScore >= 10000) totalScore += 30000; // 상대 승리 패턴 차단
                         }
